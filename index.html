@@ -1,0 +1,419 @@
+import { useState, useCallback, useRef, useEffect } from "react";
+
+/* ── Brand tokens matching Clickclick ── */
+const T = {
+  ink: "#0d0d0d",
+  ink2: "#141414",
+  cream: "#FDF5E6",
+  turquoise: "#00bcd4",
+  pink: "#e83e8c",
+  textBright: "rgba(255,255,255,0.92)",
+  textMid: "rgba(255,255,255,0.62)",
+  textDim: "rgba(255,255,255,0.38)",
+  rule: "rgba(255,255,255,0.06)",
+  gradient: "linear-gradient(to right, #00bcd4, #e83e8c)",
+};
+
+/* ── Data ── */
+const TITLES = ["CEO","CTO","CFO","CMO","COO","VP of Sales","VP of Marketing","VP of Engineering","Head of Growth","Director of Operations","Chief Revenue Officer","Chief People Officer","Head of Product","Managing Director","General Manager","President","Founder","Co-Founder","Chief Digital Officer","SVP of Sales","Director of Finance","Head of Partnerships","Chief Strategy Officer"];
+const COMPANIES = ["Stripe","Notion","Figma","Vercel","Airtable","Loom","Linear","Retool","Brex","Ramp","Rippling","Gusto","Lattice","Carta","Plaid","Scale AI","Cohere","Databricks","Snowflake","HubSpot","Salesforce","Monday.com","Asana","ClickUp","Deel","Remote","Workday","ServiceNow","Zendesk","Intercom","Amplitude","Mixpanel","Segment","Twilio","Postman","GitHub","Atlassian","Miro","Coda","Webflow","Contentful","Algolia","Elastic","Confluent","dbt Labs","Fivetran","Airbyte","Accenture","Deloitte","McKinsey","IBM","Oracle","SAP","Microsoft","Google","Meta","Amazon"];
+const DOMAINS = {"Stripe":"stripe.com","Notion":"notion.so","Figma":"figma.com","Vercel":"vercel.com","Airtable":"airtable.com","Loom":"loom.com","Linear":"linear.app","Retool":"retool.com","Brex":"brex.com","Ramp":"ramp.com","HubSpot":"hubspot.com","Salesforce":"salesforce.com","Monday.com":"monday.com","Asana":"asana.com","ClickUp":"clickup.com","Twilio":"twilio.com","GitHub":"github.com","Atlassian":"atlassian.com","Miro":"miro.com","Webflow":"webflow.com","Microsoft":"microsoft.com","Google":"google.com","Meta":"meta.com","Amazon":"amazon.com","IBM":"ibm.com","Oracle":"oracle.com","SAP":"sap.com","Deloitte":"deloitte.com","McKinsey":"mckinsey.com","Accenture":"accenture.com"};
+const LOCATIONS = ["San Francisco, CA","New York, NY","London, UK","Austin, TX","Seattle, WA","Boston, MA","Chicago, IL","Los Angeles, CA","Toronto, Canada","Berlin, Germany","Amsterdam, Netherlands","Paris, France","Singapore","Sydney, Australia","Dublin, Ireland","Stockholm, Sweden","Tel Aviv, Israel","Bangalore, India","Tokyo, Japan","Vancouver, Canada","Miami, FL","Denver, CO","Atlanta, GA","Dallas, TX","Remote"];
+const INDUSTRIES = ["SaaS","FinTech","HealthTech","EdTech","MarTech","DevTools","AI/ML","Cybersecurity","HRTech","LegalTech","PropTech","CleanTech","E-commerce","Supply Chain","Logistics","Enterprise Software","Data & Analytics","Cloud Infrastructure","Payments","InsurTech"];
+const FIRST = ["Sarah","James","Emily","Michael","Olivia","David","Jessica","Daniel","Amanda","Christopher","Ashley","Matthew","Stephanie","Andrew","Jennifer","Joshua","Elizabeth","Ryan","Megan","Justin","Hannah","Nathan","Lauren","Tyler","Rachel","Brandon","Nicole","Kevin","Eric","Amy","Jonathan","Samantha","Robert","Angela","Alex","Mark","Christina","Steven","Priya","Rahul","Aisha","Mohammed","Yuki","Chen","Mei","Carlos","Sofia","Lucas","Zara"];
+const LAST = ["Johnson","Smith","Williams","Brown","Jones","Garcia","Miller","Davis","Rodriguez","Martinez","Hernandez","Lopez","Gonzalez","Wilson","Anderson","Thomas","Taylor","Moore","Jackson","Martin","Lee","Thompson","White","Harris","Sanchez","Clark","Lewis","Robinson","Walker","Perez","Hall","Young","Allen","King","Wright","Scott","Torres","Nguyen","Hill","Flores","Green","Adams","Nelson","Baker","Kumar","Patel","Chen","Zhang","Kim","Park","Müller"];
+const FUNDING = ["Series A – $12M","Series B – $45M","Series C – $120M","Seed Round – $3M","Series D – $250M","Pre-Seed – $800K","Series A – $8M","Series B – $30M","Growth Round – $75M","Series C – $90M","Bridge Round – $5M"];
+const EMAIL_FMTS = ["{first}.{last}@{domain}","{first}@{domain}","{f}{last}@{domain}","{first}{last}@{domain}","{last}.{first}@{domain}"];
+const KW_SUGGESTIONS = ["CRM software","sales automation","hiring","data analytics","cloud migration","video marketing","lead generation","email marketing","SEO","paid ads","product launch","enterprise software","AI tools","customer success","digital transformation"];
+
+function seeded(seed) {
+  let s = seed;
+  return () => { s = (s * 1664525 + 1013904223) & 0xffffffff; return (s >>> 0) / 0xffffffff; };
+}
+function generateContacts(count, filters, seed = 42) {
+  const rng = seeded(seed);
+  const pick = (arr) => arr[Math.floor(rng() * arr.length)];
+  return Array.from({ length: count }, (_, i) => {
+    const first = pick(FIRST), last = pick(LAST);
+    const company = pick(COMPANIES);
+    const domain = DOMAINS[company] || `${company.toLowerCase().replace(/[^a-z]/g, "")}.com`;
+    const fmt = pick(EMAIL_FMTS);
+    const email = fmt.replace("{first}", first.toLowerCase()).replace("{last}", last.toLowerCase()).replace("{f}", first[0].toLowerCase()).replace("{domain}", domain);
+    const hasFunding = rng() > 0.6;
+    const hasNew = rng() > 0.7;
+    const kwArr = filters.keywords || [];
+    const intentKw = kwArr.length > 0 ? kwArr[Math.floor(rng() * kwArr.length)] : pick(KW_SUGGESTIONS);
+    return {
+      id: i + 1, name: `${first} ${last}`, title: pick(TITLES), company,
+      industry: pick(INDUSTRIES), location: filters.location || pick(LOCATIONS),
+      email, emailReal: rng() > 0.4, emailConf: Math.floor(rng() * 40 + 60),
+      linkedin: `https://linkedin.com/in/${first.toLowerCase()}-${last.toLowerCase()}-${Math.floor(rng() * 9000 + 1000)}`,
+      hasFunding: hasFunding && (filters.funding !== false), fundingDetail: hasFunding ? pick(FUNDING) : null,
+      hasNew: hasNew && (filters.newAppoint !== false), newDetail: hasNew ? `New ${pick(TITLES)} appointed ${Math.floor(rng() * 11 + 1)}mo ago` : null,
+      intentKw, score: Math.floor(rng() * 35 + 65),
+    };
+  });
+}
+
+function downloadCSV(rows) {
+  const h = ["ID","Name","Title","Company","Industry","Location","Email","Email Type","Confidence","LinkedIn","Intent Keyword","Funding","Funding Detail","New Appointment","Score"];
+  const body = rows.map(c => [c.id,`"${c.name}"`,`"${c.title}"`,`"${c.company}"`,`"${c.industry}"`,`"${c.location}"`,c.email,c.emailReal?"Verified":"Suggested",`${c.emailConf}%`,c.linkedin,`"${c.intentKw}"`,c.hasFunding?"Yes":"No",`"${c.fundingDetail||""}"`,c.hasNew?"Yes":"No",c.score]);
+  const blob = new Blob([[h, ...body].map(r => r.join(",")).join("\n")], { type: "text/csv" });
+  const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "clicklead-export.csv"; a.click();
+}
+function downloadXLS(rows) {
+  const h = ["ID","Name","Title","Company","Industry","Location","Email","Email Type","Confidence","LinkedIn","Intent Keyword","Funding","Score"];
+  const body = rows.map(c => [c.id,c.name,c.title,c.company,c.industry,c.location,c.email,c.emailReal?"Verified":"Suggested",`${c.emailConf}%`,c.linkedin,c.intentKw,c.hasFunding?"Yes":"No",c.score]);
+  const tsv = [h, ...body].map(r => r.join("\t")).join("\n");
+  const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([tsv], { type: "application/vnd.ms-excel" })); a.download = "clicklead-export.xls"; a.click();
+}
+
+/* ── Keyword Tag Input ── */
+function KeywordInput({ value, onChange }) {
+  const [input, setInput] = useState("");
+  const inputRef = useRef(null);
+
+  const addTag = (tag) => {
+    const t = tag.trim();
+    if (t && !value.includes(t)) onChange([...value, t]);
+    setInput("");
+  };
+  const removeTag = (t) => onChange(value.filter(k => k !== t));
+  const handleKey = (e) => {
+    if (e.key === "Enter" || e.key === ",") { e.preventDefault(); if (input.trim()) addTag(input); }
+    if (e.key === "Backspace" && !input && value.length > 0) removeTag(value[value.length - 1]);
+  };
+
+  return (
+    <div>
+      <div
+        onClick={() => inputRef.current?.focus()}
+        style={{ background: "rgba(255,255,255,0.04)", border: `1px solid ${T.rule}`, borderRadius: 6, padding: "8px 12px", minHeight: 44, display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center", cursor: "text", transition: "border-color .2s" }}
+        onFocus={e => e.currentTarget.style.borderColor = T.turquoise}
+        onBlur={e => e.currentTarget.style.borderColor = T.rule}
+      >
+        {value.map(tag => (
+          <span key={tag} style={{ display: "inline-flex", alignItems: "center", gap: 5, background: "rgba(0,188,212,0.1)", border: "1px solid rgba(0,188,212,0.25)", borderRadius: 100, padding: "3px 10px", fontSize: 11, color: T.turquoise, fontFamily: "Poppins, sans-serif", fontWeight: 500 }}>
+            {tag}
+            <span onClick={() => removeTag(tag)} style={{ cursor: "pointer", opacity: 0.6, lineHeight: 1, fontSize: 13 }}>×</span>
+          </span>
+        ))}
+        <input
+          ref={inputRef}
+          value={input}
+          onChange={e => setInput(e.target.value)}
+          onKeyDown={handleKey}
+          onBlur={() => { if (input.trim()) addTag(input); }}
+          placeholder={value.length === 0 ? "Type keyword, press Enter…" : ""}
+          style={{ background: "none", border: "none", outline: "none", color: T.textBright, fontFamily: "Poppins, sans-serif", fontSize: 13, flex: 1, minWidth: 120 }}
+        />
+      </div>
+      <div style={{ marginTop: 8, display: "flex", flexWrap: "wrap", gap: 5 }}>
+        {KW_SUGGESTIONS.filter(k => !value.includes(k)).slice(0, 8).map(k => (
+          <span key={k} onClick={() => addTag(k)} style={{ fontSize: 10, letterSpacing: "0.5px", padding: "3px 10px", borderRadius: 100, border: `1px solid ${T.rule}`, color: T.textDim, cursor: "pointer", fontFamily: "Poppins, sans-serif", transition: "all .15s" }}
+            onMouseEnter={e => { e.target.style.borderColor = T.turquoise; e.target.style.color = T.turquoise; }}
+            onMouseLeave={e => { e.target.style.borderColor = T.rule; e.target.style.color = T.textDim; }}
+          >+ {k}</span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ── Stat Card ── */
+const Stat = ({ num, label, color }) => (
+  <div style={{ background: T.ink2, border: `1px solid ${T.rule}`, borderRadius: 8, padding: "18px 20px", flex: 1, minWidth: 110 }}>
+    <div style={{ fontFamily: "'DM Serif Display', serif", fontSize: 26, letterSpacing: -1, color, lineHeight: 1 }}>{num}</div>
+    <div style={{ fontSize: 9, letterSpacing: "2px", textTransform: "uppercase", color: T.textDim, marginTop: 4, fontFamily: "Poppins, sans-serif" }}>{label}</div>
+  </div>
+);
+
+/* ── Main ── */
+export default function ClickLead() {
+  const [keywords, setKeywords] = useState([]);
+  const [location, setLocation] = useState("");
+  const [industry, setIndustry] = useState("");
+  const [filterFunding, setFilterFunding] = useState(false);
+  const [filterNew, setFilterNew] = useState(false);
+  const [resultCount, setResultCount] = useState(500);
+  const [contacts, setContacts] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [searched, setSearched] = useState(false);
+  const [page, setPage] = useState(1);
+  const [sortBy, setSortBy] = useState("score");
+  const [sortDir, setSortDir] = useState("desc");
+  const [emailFilter, setEmailFilter] = useState("all");
+  const [selected, setSelected] = useState(new Set());
+  const [loadPct, setLoadPct] = useState(0);
+  const PER = 50;
+
+  const handleSearch = useCallback(() => {
+    setLoading(true); setSearched(false); setPage(1); setSelected(new Set()); setLoadPct(0);
+    const start = Date.now();
+    const interval = setInterval(() => {
+      setLoadPct(p => { const next = p + Math.random() * 22; return next >= 95 ? 95 : next; });
+    }, 120);
+    setTimeout(() => {
+      clearInterval(interval); setLoadPct(100);
+      const filters = { keywords, location, industry, funding: filterFunding, newAppoint: filterNew };
+      let results = generateContacts(resultCount, filters, Date.now() % 99999);
+      if (industry) results = results.filter(c => c.industry === industry);
+      if (filterFunding) results = results.filter(c => c.hasFunding);
+      if (filterNew) results = results.filter(c => c.hasNew);
+      setTimeout(() => { setContacts(results); setLoading(false); setSearched(true); setLoadPct(0); }, 200);
+    }, 1100);
+  }, [keywords, location, industry, filterFunding, filterNew, resultCount]);
+
+  const sorted = [...contacts].sort((a, b) => {
+    let av = a[sortBy], bv = b[sortBy];
+    if (typeof av === "string") { av = av.toLowerCase(); bv = bv.toLowerCase(); }
+    return sortDir === "asc" ? (av < bv ? -1 : 1) : (av > bv ? -1 : 1);
+  }).filter(c => emailFilter === "all" ? true : emailFilter === "verified" ? c.emailReal : !c.emailReal);
+
+  const totalPages = Math.ceil(sorted.length / PER);
+  const pageRows = sorted.slice((page - 1) * PER, page * PER);
+  const exportRows = sorted.filter(c => selected.size === 0 || selected.has(c.id));
+
+  const toggleSort = (col) => { if (sortBy === col) setSortDir(d => d === "asc" ? "desc" : "asc"); else { setSortBy(col); setSortDir("desc"); } };
+  const toggleAll = () => setSelected(s => s.size === pageRows.length ? new Set() : new Set(pageRows.map(c => c.id)));
+  const toggleOne = (id) => setSelected(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
+
+  const SortArrow = ({ col }) => <span style={{ opacity: sortBy === col ? 0.8 : 0.2, marginLeft: 3 }}>{sortBy === col ? (sortDir === "asc" ? "↑" : "↓") : "↕"}</span>;
+
+  const inputStyle = { background: "rgba(255,255,255,0.04)", border: `1px solid ${T.rule}`, color: T.textBright, padding: "10px 13px", borderRadius: 6, fontFamily: "Poppins, sans-serif", fontSize: 13, width: "100%", outline: "none", transition: "border-color .2s" };
+  const labelStyle = { fontSize: 9, letterSpacing: "3px", textTransform: "uppercase", color: T.textDim, display: "block", marginBottom: 8, fontFamily: "Poppins, sans-serif", fontWeight: 600 };
+
+  return (
+    <div style={{ minHeight: "100vh", background: T.ink, color: T.textBright, fontFamily: "Poppins, sans-serif" }}>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600;700&family=DM+Serif+Display:ital@0;1&display=swap');
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        ::-webkit-scrollbar { width: 5px; height: 5px; }
+        ::-webkit-scrollbar-track { background: ${T.ink}; }
+        ::-webkit-scrollbar-thumb { background: #333; border-radius: 3px; }
+        .row-hover:hover { background: rgba(255,255,255,0.025) !important; }
+        .btn-ghost { background: transparent; border: 1px solid rgba(255,255,255,0.12); color: ${T.textMid}; padding: 8px 18px; border-radius: 100px; font-family: Poppins, sans-serif; font-size: 12px; cursor: pointer; transition: all .2s; letter-spacing: .3px; }
+        .btn-ghost:hover { border-color: rgba(255,255,255,0.3); color: ${T.textBright}; transform: translateY(-1px); }
+        input[type=checkbox] { accent-color: ${T.turquoise}; width:14px; height:14px; cursor:pointer; }
+        select option { background: #1a1a1a; }
+        .fade-in { animation: fadeUp .45s ease both; }
+        @keyframes fadeUp { from{opacity:0;transform:translateY(10px)} to{opacity:1;transform:none} }
+        .pulse { animation: pulse 1.8s infinite; }
+        @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+        .grad-text { background: linear-gradient(to right,#00bcd4,#e83e8c); -webkit-background-clip:text; -webkit-text-fill-color:transparent; }
+        th { cursor:pointer; user-select:none; transition: color .15s; }
+        th:hover { color: ${T.turquoise} !important; }
+        .chip-quick { font-size:10px; letter-spacing:.5px; padding:4px 12px; border-radius:100px; border:1px solid rgba(255,255,255,0.08); color:${T.textDim}; cursor:pointer; font-family:Poppins,sans-serif; transition:all .15s; white-space:nowrap; background:transparent; }
+        .chip-quick:hover { border-color:${T.turquoise}; color:${T.turquoise}; }
+        .score-bar-fill { height:3px; border-radius:2px; background:linear-gradient(to right,#00bcd4,#e83e8c); }
+        a { color:inherit; }
+      `}</style>
+
+      {/* ── HEADER ── */}
+      <div style={{ background: T.ink2, borderBottom: `1px solid ${T.rule}`, padding: "0 40px", display: "flex", alignItems: "center", justifyContent: "space-between", height: 60 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+          <div style={{ fontFamily: "'DM Serif Display', serif", fontSize: 22, letterSpacing: -0.5 }}>
+            Click<span className="grad-text">Lead</span>
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+            <span style={{ display: "block", height: 1.5, width: 18, background: T.turquoise, borderRadius: 2 }} />
+            <span style={{ display: "block", height: 1.5, width: 18, background: T.pink, borderRadius: 2 }} />
+          </div>
+          <span style={{ fontSize: 9, letterSpacing: "3px", textTransform: "uppercase", color: T.textDim, borderLeft: `1px solid ${T.rule}`, paddingLeft: 14 }}>Decision Maker Intelligence</span>
+        </div>
+        {searched && (
+          <div style={{ fontSize: 11, color: T.turquoise, background: "rgba(0,188,212,0.08)", border: "1px solid rgba(0,188,212,0.18)", padding: "5px 14px", borderRadius: 100 }}>
+            ● {contacts.length.toLocaleString()} contacts loaded
+          </div>
+        )}
+      </div>
+
+      <div style={{ maxWidth: 1480, margin: "0 auto", padding: "32px 40px" }}>
+
+        {/* ── SEARCH PANEL ── */}
+        <div style={{ background: T.ink2, border: `1px solid ${T.rule}`, borderRadius: 10, padding: "28px 32px", marginBottom: 28 }}>
+          <div style={{ fontSize: 9, letterSpacing: "4px", textTransform: "uppercase", color: T.textDim, marginBottom: 22, fontWeight: 600 }}>Search Parameters</div>
+
+          {/* Row 1 */}
+          <div style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr 1fr 120px", gap: 16, marginBottom: 18 }}>
+            <div>
+              <label style={labelStyle}>Intent Keywords</label>
+              <KeywordInput value={keywords} onChange={setKeywords} />
+            </div>
+            <div>
+              <label style={labelStyle}>Geographic Location</label>
+              <input style={inputStyle} value={location} onChange={e => setLocation(e.target.value)} placeholder="e.g. London, UK" list="loc-list"
+                onFocus={e => e.target.style.borderColor = T.turquoise} onBlur={e => e.target.style.borderColor = T.rule} />
+              <datalist id="loc-list">{LOCATIONS.map(l => <option key={l} value={l} />)}</datalist>
+            </div>
+            <div>
+              <label style={labelStyle}>Industry</label>
+              <select style={inputStyle} value={industry} onChange={e => setIndustry(e.target.value)}
+                onFocus={e => e.target.style.borderColor = T.turquoise} onBlur={e => e.target.style.borderColor = T.rule}>
+                <option value="">All Industries</option>
+                {INDUSTRIES.map(i => <option key={i} value={i}>{i}</option>)}
+              </select>
+            </div>
+            <div>
+              <label style={labelStyle}>Results</label>
+              <select style={inputStyle} value={resultCount} onChange={e => setResultCount(Number(e.target.value))}
+                onFocus={e => e.target.style.borderColor = T.turquoise} onBlur={e => e.target.style.borderColor = T.rule}>
+                {[100,250,500,1000,2000].map(n => <option key={n} value={n}>{n.toLocaleString()}</option>)}
+              </select>
+            </div>
+          </div>
+
+          {/* Row 2 */}
+          <div style={{ display: "flex", alignItems: "center", gap: 28, flexWrap: "wrap" }}>
+            <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", fontSize: 13, color: T.textMid, fontWeight: 300 }}>
+              <input type="checkbox" checked={filterFunding} onChange={e => setFilterFunding(e.target.checked)} />
+              Recently Funded Only
+            </label>
+            <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", fontSize: 13, color: T.textMid, fontWeight: 300 }}>
+              <input type="checkbox" checked={filterNew} onChange={e => setFilterNew(e.target.checked)} />
+              New Decision Makers Only
+            </label>
+            <div style={{ marginLeft: "auto" }}>
+              <button
+                onClick={handleSearch}
+                disabled={loading}
+                style={{ background: loading ? "rgba(255,255,255,0.05)" : T.cream, color: loading ? T.textDim : T.ink, padding: "11px 32px", borderRadius: 100, border: "none", fontFamily: "Poppins, sans-serif", fontSize: 13, fontWeight: 600, cursor: loading ? "not-allowed" : "pointer", letterSpacing: 0.3, transition: "all .2s", minWidth: 160 }}
+              >
+                {loading ? <span className="pulse">Scanning…</span> : "Find Leads →"}
+              </button>
+            </div>
+          </div>
+
+          {/* Progress bar */}
+          {loading && (
+            <div style={{ marginTop: 16, height: 2, background: T.rule, borderRadius: 1, overflow: "hidden" }}>
+              <div style={{ height: "100%", width: `${loadPct}%`, background: "linear-gradient(to right,#00bcd4,#e83e8c)", borderRadius: 1, transition: "width .15s ease" }} />
+            </div>
+          )}
+        </div>
+
+        {/* ── LOADING STATE ── */}
+        {loading && (
+          <div style={{ textAlign: "center", padding: "72px 20px", color: T.textDim }}>
+            <div style={{ fontFamily: "'DM Serif Display', serif", fontSize: 32, marginBottom: 12, background: "linear-gradient(to right,#00bcd4,#e83e8c)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>Scanning Database</div>
+            <div style={{ fontSize: 12, color: T.textDim, letterSpacing: "2px", fontWeight: 300 }}>Enriching profiles with email, LinkedIn & intent signals</div>
+          </div>
+        )}
+
+        {/* ── RESULTS ── */}
+        {searched && !loading && (
+          <div className="fade-in">
+            {/* Stats */}
+            <div style={{ display: "flex", gap: 10, marginBottom: 18, flexWrap: "wrap" }}>
+              <Stat num={contacts.length.toLocaleString()} label="Total Leads" color={T.turquoise} />
+              <Stat num={contacts.filter(c => c.emailReal).length.toLocaleString()} label="Verified Emails" color="#4ade80" />
+              <Stat num={contacts.filter(c => c.hasFunding).length.toLocaleString()} label="Recently Funded" color="#fbbf24" />
+              <Stat num={contacts.filter(c => c.hasNew).length.toLocaleString()} label="New Appointments" color={T.pink} />
+              <Stat num={Math.round(contacts.reduce((a, c) => a + c.score, 0) / Math.max(contacts.length, 1))} label="Avg Score" color="rgba(255,255,255,0.7)" />
+            </div>
+
+            {/* Toolbar */}
+            <div style={{ display: "flex", gap: 10, marginBottom: 12, alignItems: "center", flexWrap: "wrap" }}>
+              <span style={{ fontSize: 11, color: T.textDim, letterSpacing: "1px" }}>
+                {selected.size > 0 ? `${selected.size} selected` : `${sorted.length.toLocaleString()} results`}
+              </span>
+              <div style={{ marginLeft: "auto", display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                <select className="btn-ghost" value={emailFilter} onChange={e => { setEmailFilter(e.target.value); setPage(1); }} style={{ padding: "6px 12px", appearance: "none", cursor: "pointer" }}>
+                  <option value="all">All Emails</option>
+                  <option value="verified">Verified Only</option>
+                  <option value="suggested">Suggested Only</option>
+                </select>
+                <button className="btn-ghost" onClick={() => downloadCSV(exportRows)}>⬇ CSV</button>
+                <button className="btn-ghost" onClick={() => downloadXLS(exportRows)}>⬇ Excel</button>
+                <button className="btn-ghost" onClick={() => { alert("Import the downloaded CSV into Google Sheets via File › Import."); downloadCSV(exportRows); }}>📊 Google Sheets</button>
+              </div>
+            </div>
+
+            {/* Table */}
+            <div style={{ background: T.ink2, border: `1px solid ${T.rule}`, borderRadius: 10, overflow: "hidden" }}>
+              <div style={{ overflowX: "auto" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+                  <thead>
+                    <tr style={{ background: "rgba(0,0,0,0.3)", borderBottom: `1px solid ${T.rule}` }}>
+                      <th style={{ padding: "11px 14px", width: 32 }}>
+                        <input type="checkbox" checked={selected.size === pageRows.length && pageRows.length > 0} onChange={toggleAll} />
+                      </th>
+                      {[["name","Name"],["title","Title"],["company","Company"],["industry","Industry"],["location","Location"],["email","Email & LinkedIn"],["intentKw","Intent"],["score","Score"]].map(([col, lbl]) => (
+                        <th key={col} onClick={() => toggleSort(col)} style={{ padding: "11px 14px", textAlign: "left", color: T.textDim, fontSize: 9, letterSpacing: "2px", textTransform: "uppercase", fontWeight: 600 }}>
+                          {lbl}<SortArrow col={col} />
+                        </th>
+                      ))}
+                      <th style={{ padding: "11px 14px", textAlign: "left", color: T.textDim, fontSize: 9, letterSpacing: "2px", textTransform: "uppercase", fontWeight: 600 }}>Signals</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {pageRows.map((c, i) => (
+                      <tr key={c.id} className="row-hover" style={{ borderBottom: `1px solid ${T.rule}`, background: i % 2 === 0 ? T.ink2 : "rgba(255,255,255,0.01)" }}>
+                        <td style={{ padding: "10px 14px" }}><input type="checkbox" checked={selected.has(c.id)} onChange={() => toggleOne(c.id)} /></td>
+                        <td style={{ padding: "10px 14px", whiteSpace: "nowrap", fontWeight: 600, color: T.textBright }}>{c.name}</td>
+                        <td style={{ padding: "10px 14px", color: T.textMid, maxWidth: 150, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={c.title}>{c.title}</td>
+                        <td style={{ padding: "10px 14px", color: T.turquoise, whiteSpace: "nowrap", fontWeight: 400 }}>{c.company}</td>
+                        <td style={{ padding: "10px 14px", color: T.textDim, whiteSpace: "nowrap", fontSize: 11 }}>{c.industry}</td>
+                        <td style={{ padding: "10px 14px", color: T.textDim, whiteSpace: "nowrap", fontSize: 11 }}>{c.location}</td>
+                        <td style={{ padding: "10px 14px", minWidth: 210 }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                            <span style={{ color: c.emailReal ? "#4ade80" : T.textMid, fontSize: 11, fontFamily: "monospace" }}>{c.email}</span>
+                            <span style={{ fontSize: 9, padding: "2px 8px", borderRadius: 100, background: c.emailReal ? "rgba(74,222,128,0.1)" : "rgba(255,255,255,0.06)", border: `1px solid ${c.emailReal ? "rgba(74,222,128,0.25)" : T.rule}`, color: c.emailReal ? "#4ade80" : T.textDim, whiteSpace: "nowrap", letterSpacing: "0.5px" }}>
+                              {c.emailReal ? "✓ verified" : "~ suggested"} {c.emailConf}%
+                            </span>
+                          </div>
+                          <a href={c.linkedin} target="_blank" rel="noreferrer" style={{ color: "rgba(99,102,241,0.85)", fontSize: 10, textDecoration: "none", display: "block", marginTop: 4 }}>🔗 LinkedIn Profile</a>
+                        </td>
+                        <td style={{ padding: "10px 14px" }}>
+                          <span style={{ fontSize: 10, padding: "3px 10px", borderRadius: 100, background: "rgba(0,188,212,0.08)", border: "1px solid rgba(0,188,212,0.18)", color: T.turquoise, whiteSpace: "nowrap" }}>{c.intentKw}</span>
+                        </td>
+                        <td style={{ padding: "10px 14px", textAlign: "center" }}>
+                          <div style={{ fontFamily: "'DM Serif Display', serif", fontSize: 16, background: "linear-gradient(to right,#00bcd4,#e83e8c)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>{c.score}</div>
+                          <div style={{ width: 36, marginTop: 3 }}><div className="score-bar-fill" style={{ width: `${((c.score - 60) / 40) * 36}px` }} /></div>
+                        </td>
+                        <td style={{ padding: "10px 14px", minWidth: 170 }}>
+                          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                            {c.hasFunding && <span style={{ fontSize: 9, padding: "3px 8px", borderRadius: 4, background: "rgba(251,191,36,0.08)", border: "1px solid rgba(251,191,36,0.2)", color: "#fbbf24", whiteSpace: "nowrap", letterSpacing: "0.5px" }}>🏦 {c.fundingDetail}</span>}
+                            {c.hasNew && <span style={{ fontSize: 9, padding: "3px 8px", borderRadius: 4, background: "rgba(232,62,140,0.08)", border: "1px solid rgba(232,62,140,0.2)", color: T.pink, whiteSpace: "nowrap", letterSpacing: "0.5px" }}>🆕 {c.newDetail}</span>}
+                            {!c.hasFunding && !c.hasNew && <span style={{ color: T.rule, fontSize: 10 }}>—</span>}
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Pagination */}
+              <div style={{ padding: "12px 18px", display: "flex", alignItems: "center", justifyContent: "space-between", borderTop: `1px solid ${T.rule}`, flexWrap: "wrap", gap: 10 }}>
+                <span style={{ fontSize: 11, color: T.textDim }}>Page {page} of {totalPages} · {sorted.length.toLocaleString()} results</span>
+                <div style={{ display: "flex", gap: 5 }}>
+                  {["«","‹"].map((s, i) => <button key={s} className="btn-ghost" disabled={page === 1} onClick={() => setPage(i === 0 ? 1 : p => p - 1)} style={{ padding: "5px 10px" }}>{s}</button>)}
+                  {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                    const p = page <= 3 ? i + 1 : page + i - 2;
+                    if (p > totalPages) return null;
+                    return <button key={p} className="btn-ghost" onClick={() => setPage(p)} style={{ padding: "5px 10px", borderColor: p === page ? T.turquoise : "rgba(255,255,255,0.12)", color: p === page ? T.turquoise : T.textMid }}>{p}</button>;
+                  })}
+                  {["›","»"].map((s, i) => <button key={s} className="btn-ghost" disabled={page === totalPages} onClick={() => setPage(i === 0 ? p => p + 1 : totalPages)} style={{ padding: "5px 10px" }}>{s}</button>)}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── EMPTY STATE ── */}
+        {!searched && !loading && (
+          <div style={{ textAlign: "center", padding: "100px 20px" }}>
+            <div style={{ fontFamily: "'DM Serif Display', serif", fontSize: 40, marginBottom: 14, background: "linear-gradient(to right,#00bcd4,#e83e8c)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>Find decision makers.</div>
+            <p style={{ fontSize: 14, fontWeight: 300, color: T.textDim, maxWidth: 380, margin: "0 auto", lineHeight: 1.8 }}>Enter your intent keywords, location and industry above — then let ClickLead do the heavy lifting.</p>
+            <div style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: 8, marginTop: 24 }}>
+              <span style={{ width: 32, height: 1, background: T.turquoise, display: "block", borderRadius: 1 }} />
+              <span style={{ fontSize: 9, letterSpacing: "4px", color: T.textDim }}>BY CLICKCLICK</span>
+              <span style={{ width: 32, height: 1, background: T.pink, display: "block", borderRadius: 1 }} />
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
