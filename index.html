@@ -25,6 +25,9 @@
 <script type="text/babel">
 const { useState, useCallback, useRef, useEffect } = React;
 
+/* ── Proxy URL ── */
+const PROXY = "https://kedonnelly5--d78e4de6199a11f1991242dde27851f2.web.val.run";
+
 const T = {
   ink:"#0d0d0d", ink2:"#141414", cream:"#FDF5E6",
   turquoise:"#00bcd4", pink:"#e83e8c",
@@ -62,34 +65,24 @@ const KW_SUGGESTIONS = [
   "product launch","enterprise software","AI tools","customer success","digital transformation",
 ];
 
-/* ── Call Apollo people search ── */
+/* ── Apollo call through proxy ── */
 async function callApollo(apiKey, params) {
   const body = { api_key: apiKey };
-
-  if (params.titles && params.titles.length > 0)
-    body.person_titles = params.titles;
-
-  if (params.location)
-    body.person_locations = [params.location];
-
-  if (params.keywords && params.keywords.length > 0)
-    body.q_keywords = params.keywords.join(" ");
-
-  if (params.industry)
-    body.q_keywords = [body.q_keywords, params.industry].filter(Boolean).join(" ");
-
+  if (params.titles && params.titles.length > 0)   body.person_titles = params.titles;
+  if (params.location)                              body.person_locations = [params.location];
+  if (params.keywords && params.keywords.length > 0) body.q_keywords = params.keywords.join(" ");
+  if (params.industry) body.q_keywords = [body.q_keywords, params.industry].filter(Boolean).join(" ");
   if (params.funding) {
     body.organization_latest_funding_stage_cd = [
       "seed","angel","series_a","series_b","series_c","series_d","series_e","series_f"
     ];
   }
-
   body.page     = params.page || 1;
   body.per_page = params.perPage || 25;
 
-  const res = await fetch("https://api.apollo.io/v1/mixed_people/search", {
+  const res = await fetch(PROXY, {
     method: "POST",
-    headers: { "Content-Type": "application/json", "Cache-Control": "no-cache" },
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
 
@@ -98,57 +91,53 @@ async function callApollo(apiKey, params) {
   if (res.status === 429) throw new Error("Rate limit reached. Please wait a moment and try again.");
   if (!res.ok) {
     const e = await res.json().catch(()=>({}));
-    throw new Error(e.message || e.error || "Apollo error " + res.status);
+    throw new Error(e.message || e.error || "Error " + res.status + " — check your API key.");
   }
-
   return res.json();
 }
 
-/* ── Format a raw Apollo person into a clean contact ── */
+/* ── Format Apollo person ── */
 function fmt(p) {
-  const org  = p.organization || {};
+  const org = p.organization || {};
   const email = p.email || null;
   const eStatus = p.email_status || "unknown";
   const li = p.linkedin_url
     ? (p.linkedin_url.startsWith("http") ? p.linkedin_url : "https://" + p.linkedin_url)
     : null;
 
-  // Funding
   let fundingLabel = null;
   if (org.latest_funding_stage) {
     const stage  = org.latest_funding_stage.replace(/_/g," ").replace(/\b\w/g,c=>c.toUpperCase());
-    const amount = org.funding_events && org.funding_events[0] && org.funding_events[0].amount
+    const amount = org.funding_events?.[0]?.amount
       ? " – $" + (org.funding_events[0].amount / 1e6).toFixed(1) + "M"
       : "";
     fundingLabel = stage + amount;
   }
 
-  // Score
   let score = 60;
-  if (email)                              score += 14;
-  if (eStatus === "verified")             score += 10;
-  else if (eStatus === "likely")          score +=  5;
-  if (li)                                 score +=  8;
-  if (org.latest_funding_stage)           score +=  5;
-  if (p.phone || p.sanitized_phone)       score +=  3;
+  if (email)                    score += 14;
+  if (eStatus === "verified")   score += 10;
+  else if (eStatus === "likely") score += 5;
+  if (li)                        score +=  8;
+  if (org.latest_funding_stage)  score +=  5;
+  if (p.sanitized_phone)         score +=  3;
   score = Math.min(score, 99);
 
   return {
-    id:            p.id || Math.random().toString(36),
-    name:          [p.first_name, p.last_name].filter(Boolean).join(" ") || "—",
-    title:         p.title || "—",
-    company:       org.name || "—",
-    industry:      org.industry || "—",
-    location:      [p.city, p.state, p.country].filter(Boolean).join(", ") || "—",
-    email,
-    eStatus,
+    id:       p.id || Math.random().toString(36),
+    name:     [p.first_name, p.last_name].filter(Boolean).join(" ") || "—",
+    title:    p.title || "—",
+    company:  org.name || "—",
+    industry: org.industry || "—",
+    location: [p.city, p.state, p.country].filter(Boolean).join(", ") || "—",
+    email, eStatus,
     emailVerified: eStatus === "verified",
     li,
-    phone:         p.sanitized_phone || p.phone_numbers?.[0]?.sanitized_number || null,
-    funding:       fundingLabel,
-    employees:     org.estimated_num_employees
-                     ? org.estimated_num_employees.toLocaleString() + " employees"
-                     : null,
+    phone:    p.sanitized_phone || null,
+    funding:  fundingLabel,
+    employees: org.estimated_num_employees
+      ? org.estimated_num_employees.toLocaleString() + " employees"
+      : null,
     score,
   };
 }
@@ -159,17 +148,19 @@ function toCSV(rows) {
   const b = rows.map(r=>[
     '"'+(r.name||"")+'"','"'+(r.title||"")+'"','"'+(r.company||"")+'"',
     '"'+(r.industry||"")+'"','"'+(r.location||"")+'"',
-    r.email||"", r.eStatus||"", r.li||"", r.phone||"",
-    '"'+(r.funding||"")+'"', r.employees||"", r.score,
+    r.email||"",r.eStatus||"",r.li||"",r.phone||"",
+    '"'+(r.funding||"")+'"',r.employees||"",r.score,
   ]);
-  const blob = new Blob([[h,...b].map(r=>r.join(",")).join("\n")],{type:"text/csv"});
-  const a = document.createElement("a"); a.href=URL.createObjectURL(blob); a.download="clicklead.csv"; a.click();
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([[h,...b].map(r=>r.join(",")).join("\n")],{type:"text/csv"}));
+  a.download = "clicklead.csv"; a.click();
 }
 function toXLS(rows) {
   const h = ["Name","Title","Company","Industry","Location","Email","Email Status","LinkedIn","Phone","Funding","Employees","Score"];
   const b = rows.map(r=>[r.name||"",r.title||"",r.company||"",r.industry||"",r.location||"",r.email||"",r.eStatus||"",r.li||"",r.phone||"",r.funding||"",r.employees||"",r.score]);
-  const blob = new Blob([[h,...b].map(r=>r.join("\t")).join("\n")],{type:"application/vnd.ms-excel"});
-  const a = document.createElement("a"); a.href=URL.createObjectURL(blob); a.download="clicklead.xls"; a.click();
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([[h,...b].map(r=>r.join("\t")).join("\n")],{type:"application/vnd.ms-excel"}));
+  a.download = "clicklead.xls"; a.click();
 }
 
 /* ── Keyword tag input ── */
@@ -259,7 +250,7 @@ function TitlePicker({ value, onChange }) {
 }
 
 /* ── Stat card ── */
-function Stat({num, label, color}) {
+function Stat({num,label,color}) {
   return (
     <div style={{background:T.ink2,border:"1px solid "+T.rule,borderRadius:8,padding:"18px 20px",flex:1,minWidth:110}}>
       <div style={{fontFamily:"'DM Serif Display',serif",fontSize:26,letterSpacing:-1,color,lineHeight:1}}>{num}</div>
@@ -275,7 +266,7 @@ function EmailBadge({status}) {
     likely:   ["#fbbf24","rgba(251,191,36,0.1)","rgba(251,191,36,0.25)","~ likely"],
     invalid:  ["#f87171","rgba(248,113,113,0.1)","rgba(248,113,113,0.25)","✕ invalid"],
   };
-  const [col,bg,border,label] = map[status] || [T.textDim,"rgba(255,255,255,0.04)",T.rule,"? unknown"];
+  const [col,bg,border,label] = map[status]||[T.textDim,"rgba(255,255,255,0.04)",T.rule,"? unknown"];
   return (
     <span style={{fontSize:9,padding:"2px 8px",borderRadius:100,background:bg,border:"1px solid "+border,color:col,whiteSpace:"nowrap",letterSpacing:"0.5px"}}>
       {label}
@@ -283,17 +274,13 @@ function EmailBadge({status}) {
   );
 }
 
-/* ══════════════════════════════════════
-   MAIN APP
-══════════════════════════════════════ */
+/* ══ MAIN APP ══ */
 function ClickLead() {
-  /* API key state */
   const [apiKey,       setApiKey]       = useState("");
   const [keyInput,     setKeyInput]     = useState("");
   const [keyVisible,   setKeyVisible]   = useState(false);
-  const [showSettings, setShowSettings] = useState(true); // open on first load
+  const [showSettings, setShowSettings] = useState(true);
 
-  /* Search params */
   const [keywords,     setKeywords]     = useState([]);
   const [location,     setLocation]     = useState("");
   const [industry,     setIndustry]     = useState("");
@@ -301,7 +288,6 @@ function ClickLead() {
   const [funding,      setFunding]      = useState(false);
   const [perPage,      setPerPage]      = useState(25);
 
-  /* Results */
   const [contacts,     setContacts]     = useState([]);
   const [loading,      setLoading]      = useState(false);
   const [loadingMore,  setLoadingMore]  = useState(false);
@@ -310,7 +296,6 @@ function ClickLead() {
   const [curPage,      setCurPage]      = useState(1);
   const [total,        setTotal]        = useState(0);
 
-  /* Table state */
   const [sortBy,       setSortBy]       = useState("score");
   const [sortDir,      setSortDir]      = useState("desc");
   const [emailFilter,  setEmailFilter]  = useState("all");
@@ -348,7 +333,6 @@ function ClickLead() {
   const handleSearch = () => runSearch(1, false);
   const handleMore   = () => runSearch(curPage + 1, true);
 
-  /* Sorting + filtering */
   const sorted = [...contacts].sort((a,b)=>{
     let av=a[sortBy]??0, bv=b[sortBy]??0;
     if(typeof av==="string"){av=av.toLowerCase();bv=bv.toLowerCase();}
@@ -359,20 +343,18 @@ function ClickLead() {
     return true;
   });
 
-  const totalDisp = Math.ceil(sorted.length / DISP);
+  const totalDisp = Math.ceil(sorted.length/DISP);
   const pageRows  = sorted.slice((dispPage-1)*DISP, dispPage*DISP);
   const expRows   = sorted.filter(c=>selected.size===0||selected.has(c.id));
 
-  const tSort  = col => { if(sortBy===col) setSortDir(d=>d==="asc"?"desc":"asc"); else{setSortBy(col);setSortDir("desc");} };
-  const tAll   = () => setSelected(s=>s.size===pageRows.length?new Set():new Set(pageRows.map(r=>r.id)));
-  const tOne   = id => setSelected(s=>{ const n=new Set(s); n.has(id)?n.delete(id):n.add(id); return n; });
-
-  const SA = ({col}) => <span style={{opacity:sortBy===col?0.8:0.2,marginLeft:3}}>{sortBy===col?(sortDir==="asc"?"↑":"↓"):"↕"}</span>;
+  const tSort = col => { if(sortBy===col) setSortDir(d=>d==="asc"?"desc":"asc"); else{setSortBy(col);setSortDir("desc");} };
+  const tAll  = ()  => setSelected(s=>s.size===pageRows.length?new Set():new Set(pageRows.map(r=>r.id)));
+  const tOne  = id  => setSelected(s=>{ const n=new Set(s); n.has(id)?n.delete(id):n.add(id); return n; });
+  const SA    = ({col}) => <span style={{opacity:sortBy===col?0.8:0.2,marginLeft:3}}>{sortBy===col?(sortDir==="asc"?"↑":"↓"):"↕"}</span>;
 
   const iS = {background:"rgba(255,255,255,0.04)",border:"1px solid "+T.rule,color:T.textBright,padding:"10px 13px",borderRadius:6,fontFamily:"Poppins,sans-serif",fontSize:13,width:"100%",outline:"none"};
   const lS = {fontSize:9,letterSpacing:"3px",textTransform:"uppercase",color:T.textDim,display:"block",marginBottom:8,fontFamily:"Poppins,sans-serif",fontWeight:600};
-
-  const canLoadMore = contacts.length < total && !loading && !loadingMore;
+  const canMore = contacts.length < total && !loading && !loadingMore;
 
   return (
     <div style={{minHeight:"100vh",background:T.ink,color:T.textBright,fontFamily:"Poppins,sans-serif"}}>
@@ -391,14 +373,15 @@ function ClickLead() {
         th{cursor:pointer;user-select:none}
         th:hover{color:#00bcd4 !important}
         .sbf{height:3px;border-radius:2px;background:linear-gradient(to right,#00bcd4,#e83e8c)}
-        .pri{background:linear-gradient(to right,#00bcd4,#e83e8c);color:#0d0d0d;padding:11px 32px;border-radius:100px;border:none;font-family:Poppins,sans-serif;font-size:13px;font-weight:600;cursor:pointer;transition:opacity .2s,transform .2s;letter-spacing:0.3px}
+        .pri{background:linear-gradient(to right,#00bcd4,#e83e8c);color:#0d0d0d;padding:11px 32px;border-radius:100px;border:none;font-family:Poppins,sans-serif;font-size:13px;font-weight:700;cursor:pointer;transition:opacity .2s,transform .2s}
         .pri:hover{opacity:.88;transform:translateY(-1px)}
         .pri:disabled{opacity:.4;cursor:not-allowed;transform:none}
         .key-input{background:rgba(255,255,255,0.04);border:1px solid rgba(0,188,212,0.3);color:rgba(255,255,255,0.92);padding:11px 14px;border-radius:6px;font-family:monospace;font-size:13px;width:100%;outline:none;letter-spacing:1px}
         .key-input:focus{border-color:#00bcd4}
+        @keyframes load{0%{width:0%;margin-left:0}50%{width:60%;margin-left:20%}100%{width:0%;margin-left:100%}}
       `}</style>
 
-      {/* ══ HEADER ══ */}
+      {/* ── HEADER ── */}
       <div style={{background:T.ink2,borderBottom:"1px solid "+T.rule,padding:"0 40px",display:"flex",alignItems:"center",justifyContent:"space-between",height:60,position:"sticky",top:0,zIndex:100}}>
         <div style={{display:"flex",alignItems:"center",gap:14}}>
           <div style={{fontFamily:"'DM Serif Display',serif",fontSize:22,letterSpacing:-0.5}}>
@@ -408,9 +391,7 @@ function ClickLead() {
             <span style={{display:"block",height:2,width:18,background:T.turquoise,borderRadius:2}}/>
             <span style={{display:"block",height:2,width:18,background:T.pink,borderRadius:2}}/>
           </div>
-          <span style={{fontSize:9,letterSpacing:"3px",textTransform:"uppercase",color:T.textDim,borderLeft:"1px solid "+T.rule,paddingLeft:14}}>
-            Decision Maker Intelligence
-          </span>
+          <span style={{fontSize:9,letterSpacing:"3px",textTransform:"uppercase",color:T.textDim,borderLeft:"1px solid "+T.rule,paddingLeft:14}}>Decision Maker Intelligence</span>
         </div>
         <div style={{display:"flex",alignItems:"center",gap:10}}>
           {searched&&(
@@ -422,63 +403,45 @@ function ClickLead() {
             <span>⚙</span>
             {apiKey
               ? <span style={{color:"#4ade80",fontSize:10}}>● API Connected</span>
-              : <span style={{color:T.pink,fontSize:10}}>● Connect API Key</span>
+              : <span style={{color:T.pink,fontSize:10}}>● Enter API Key</span>
             }
           </button>
         </div>
       </div>
 
-      {/* ══ API KEY SETTINGS ══ */}
+      {/* ── API KEY PANEL ── */}
       {showSettings&&(
-        <div style={{background:"rgba(0,188,212,0.04)",borderBottom:"1px solid rgba(0,188,212,0.15)",padding:"28px 40px"}}>
-          <div style={{maxWidth:580}}>
-            <div style={{fontSize:9,letterSpacing:"3px",textTransform:"uppercase",color:T.turquoise,marginBottom:14,fontWeight:600}}>
-              Apollo API Key
-            </div>
-            <p style={{fontSize:13,fontWeight:300,color:T.textMid,lineHeight:1.7,marginBottom:18}}>
-              Enter your Apollo.io API key below. It stays in your browser only — it is never sent anywhere except directly to Apollo's servers when you search.
-              <br/>
-              <span style={{fontSize:11,color:T.textDim}}>
-                Find it at: apollo.io → Settings → API Keys → Create new key (name it "ClickLead")
-              </span>
+        <div style={{background:"rgba(0,188,212,0.04)",borderBottom:"1px solid rgba(0,188,212,0.15)",padding:"26px 40px"}}>
+          <div style={{maxWidth:600}}>
+            <div style={{fontSize:9,letterSpacing:"3px",textTransform:"uppercase",color:T.turquoise,marginBottom:12,fontWeight:600}}>Apollo API Key</div>
+            <p style={{fontSize:13,fontWeight:300,color:T.textMid,lineHeight:1.7,marginBottom:16}}>
+              Paste your Apollo.io API key below. It stays in your browser only and is sent directly to Apollo when you search — nowhere else.
+              <br/><span style={{fontSize:11,color:T.textDim}}>Apollo → Settings → API Keys → Create new key → name it "ClickLead"</span>
             </p>
             <div style={{display:"flex",gap:10,alignItems:"center"}}>
               <div style={{flex:1,position:"relative"}}>
-                <input
-                  className="key-input"
-                  type={keyVisible?"text":"password"}
-                  value={keyInput}
-                  onChange={e=>setKeyInput(e.target.value)}
+                <input className="key-input" type={keyVisible?"text":"password"}
+                  value={keyInput} onChange={e=>setKeyInput(e.target.value)}
                   onKeyDown={e=>e.key==="Enter"&&saveKey()}
-                  placeholder="Paste your Apollo API key here…"
-                />
+                  placeholder="Paste your Apollo API key here…"/>
                 <span onClick={()=>setKeyVisible(v=>!v)}
                   style={{position:"absolute",right:12,top:"50%",transform:"translateY(-50%)",cursor:"pointer",fontSize:14,color:T.textDim,userSelect:"none"}}>
                   {keyVisible?"🙈":"👁"}
                 </span>
               </div>
-              <button onClick={saveKey} className="pri" style={{whiteSpace:"nowrap"}}>
-                Connect →
-              </button>
+              <button onClick={saveKey} className="pri" style={{whiteSpace:"nowrap",minWidth:120}}>Connect →</button>
             </div>
-            {apiKey&&(
-              <div style={{marginTop:10,fontSize:11,color:"#4ade80"}}>
-                ✓ API key saved — ready to search real contacts
-              </div>
-            )}
+            {apiKey&&<div style={{marginTop:10,fontSize:11,color:"#4ade80"}}>✓ Connected — ready to search 275M real contacts</div>}
           </div>
         </div>
       )}
 
       <div style={{maxWidth:1500,margin:"0 auto",padding:"32px 40px"}}>
 
-        {/* ══ SEARCH PANEL ══ */}
+        {/* ── SEARCH PANEL ── */}
         <div style={{background:T.ink2,border:"1px solid "+T.rule,borderRadius:10,padding:"28px 32px",marginBottom:24}}>
-          <div style={{fontSize:9,letterSpacing:"4px",textTransform:"uppercase",color:T.textDim,marginBottom:22,fontWeight:600}}>
-            Search Parameters
-          </div>
+          <div style={{fontSize:9,letterSpacing:"4px",textTransform:"uppercase",color:T.textDim,marginBottom:22,fontWeight:600}}>Search Parameters</div>
 
-          {/* Row 1: Keywords + Location + Industry */}
           <div style={{display:"grid",gridTemplateColumns:"1.5fr 1fr 1fr",gap:16,marginBottom:16}}>
             <div>
               <label style={lS}>Intent Keywords</label>
@@ -503,23 +466,22 @@ function ClickLead() {
             </div>
           </div>
 
-          {/* Row 2: Titles + controls */}
-          <div style={{display:"grid",gridTemplateColumns:"1fr auto auto auto",gap:16,alignItems:"end",marginBottom:18}}>
+          <div style={{display:"grid",gridTemplateColumns:"1fr auto auto auto",gap:16,alignItems:"end"}}>
             <div>
               <label style={lS}>Decision Maker Titles</label>
               <TitlePicker value={titles} onChange={setTitles}/>
             </div>
             <div>
-              <label style={lS}>Results per search</label>
-              <select style={{...iS,width:130}} value={perPage} onChange={e=>setPerPage(Number(e.target.value))}
+              <label style={lS}>Results per page</label>
+              <select style={{...iS,width:140}} value={perPage} onChange={e=>setPerPage(Number(e.target.value))}
                 onFocus={e=>e.target.style.borderColor=T.turquoise}
                 onBlur={e=>e.target.style.borderColor=T.rule}>
                 {[10,25,50,100].map(n=><option key={n} value={n}>{n} contacts</option>)}
               </select>
             </div>
-            <div style={{paddingBottom:0}}>
+            <div>
               <label style={{...lS,marginBottom:12}}>&nbsp;</label>
-              <label style={{display:"flex",alignItems:"center",gap:8,cursor:"pointer",fontSize:13,color:T.textMid,fontWeight:300,whiteSpace:"nowrap"}}>
+              <label style={{display:"flex",alignItems:"center",gap:8,cursor:"pointer",fontSize:13,color:T.textMid,fontWeight:300,whiteSpace:"nowrap",paddingBottom:2}}>
                 <input type="checkbox" checked={funding} onChange={e=>setFunding(e.target.checked)}/>
                 Recently Funded Only
               </label>
@@ -533,20 +495,20 @@ function ClickLead() {
           </div>
 
           {!apiKey&&(
-            <div style={{fontSize:12,color:T.pink,marginTop:-8}}>
-              ⚠ Enter your Apollo API key above to start searching real contacts.
+            <div style={{fontSize:12,color:T.pink,marginTop:14}}>
+              ⚠ Enter your Apollo API key using the ⚙ button above to start searching.
             </div>
           )}
         </div>
 
-        {/* ══ ERROR ══ */}
+        {/* ── ERROR ── */}
         {error&&(
-          <div style={{background:"rgba(248,113,113,0.08)",border:"1px solid rgba(248,113,113,0.25)",borderRadius:8,padding:"16px 20px",marginBottom:20,color:"#f87171",fontSize:13}}>
+          <div style={{background:"rgba(248,113,113,0.08)",border:"1px solid rgba(248,113,113,0.25)",borderRadius:8,padding:"16px 20px",marginBottom:20,color:"#f87171",fontSize:13,lineHeight:1.6}}>
             ⚠ {error}
           </div>
         )}
 
-        {/* ══ LOADING ══ */}
+        {/* ── LOADING ── */}
         {loading&&(
           <div style={{textAlign:"center",padding:"80px 20px"}}>
             <div style={{fontFamily:"'DM Serif Display',serif",fontSize:34,marginBottom:14,background:"linear-gradient(to right,#00bcd4,#e83e8c)",WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent"}}>
@@ -555,28 +517,24 @@ function ClickLead() {
             <div style={{fontSize:12,color:T.textDim,letterSpacing:"2px",fontWeight:300}}>
               Pulling real decision makers with verified emails &amp; LinkedIn profiles…
             </div>
-            <div style={{marginTop:24,width:200,height:2,background:T.rule,borderRadius:1,margin:"24px auto 0",overflow:"hidden"}}>
+            <div style={{width:220,height:2,background:T.rule,borderRadius:1,margin:"24px auto 0",overflow:"hidden"}}>
               <div style={{height:"100%",background:"linear-gradient(to right,#00bcd4,#e83e8c)",borderRadius:1,animation:"load 1.4s ease-in-out infinite"}}/>
             </div>
-            <style>{`@keyframes load{0%{width:0%;margin-left:0}50%{width:70%;margin-left:15%}100%{width:0%;margin-left:100%}}`}</style>
           </div>
         )}
 
-        {/* ══ RESULTS ══ */}
+        {/* ── RESULTS ── */}
         {searched&&!loading&&(
           <div className="fi">
-
-            {/* Stats */}
             <div style={{display:"flex",gap:10,marginBottom:18,flexWrap:"wrap"}}>
-              <Stat num={contacts.length.toLocaleString()} label="Contacts Loaded" color={T.turquoise}/>
-              <Stat num={total.toLocaleString()} label="Total Available" color="rgba(255,255,255,0.55)"/>
+              <Stat num={contacts.length.toLocaleString()} label="Loaded" color={T.turquoise}/>
+              <Stat num={total.toLocaleString()} label="Total Available" color="rgba(255,255,255,0.5)"/>
               <Stat num={contacts.filter(c=>c.emailVerified).length.toLocaleString()} label="Verified Emails" color="#4ade80"/>
               <Stat num={contacts.filter(c=>c.email&&!c.emailVerified).length.toLocaleString()} label="Likely Emails" color="#fbbf24"/>
               <Stat num={contacts.filter(c=>c.funding).length.toLocaleString()} label="Funded Companies" color={T.pink}/>
               <Stat num={contacts.filter(c=>c.li).length.toLocaleString()} label="LinkedIn Profiles" color="#7bb3f0"/>
             </div>
 
-            {/* Toolbar */}
             <div style={{display:"flex",gap:10,marginBottom:12,alignItems:"center",flexWrap:"wrap"}}>
               <span style={{fontSize:11,color:T.textDim}}>
                 {selected.size>0?selected.size+" selected":sorted.length.toLocaleString()+" contacts"}
@@ -585,15 +543,14 @@ function ClickLead() {
                 <select className="bg" value={emailFilter} onChange={e=>{setEmailFilter(e.target.value);setDispPage(1);}} style={{padding:"6px 14px",cursor:"pointer"}}>
                   <option value="all">All Contacts</option>
                   <option value="has_email">Has Email</option>
-                  <option value="verified">Verified Email Only</option>
+                  <option value="verified">Verified Only</option>
                 </select>
                 <button className="bg" onClick={()=>toCSV(expRows)}>⬇ CSV</button>
                 <button className="bg" onClick={()=>toXLS(expRows)}>⬇ Excel</button>
-                <button className="bg" onClick={()=>{alert("Import the downloaded CSV into Google Sheets via File › Import in Google Sheets.");toCSV(expRows);}}>📊 Google Sheets</button>
+                <button className="bg" onClick={()=>{alert("Import the downloaded CSV into Google Sheets via File › Import.");toCSV(expRows);}}>📊 Google Sheets</button>
               </div>
             </div>
 
-            {/* Table */}
             <div style={{background:T.ink2,border:"1px solid "+T.rule,borderRadius:10,overflow:"hidden"}}>
               <div style={{overflowX:"auto"}}>
                 <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
@@ -602,11 +559,7 @@ function ClickLead() {
                       <th style={{padding:"11px 14px",width:36}}>
                         <input type="checkbox" checked={selected.size===pageRows.length&&pageRows.length>0} onChange={tAll}/>
                       </th>
-                      {[
-                        ["name","Name"],["title","Title"],["company","Company"],
-                        ["industry","Industry"],["location","Location"],
-                        ["email","Email"],["li","LinkedIn"],["score","Score"]
-                      ].map(([col,lbl])=>(
+                      {[["name","Name"],["title","Title"],["company","Company"],["industry","Industry"],["location","Location"],["email","Email"],["li","LinkedIn"],["score","Score"]].map(([col,lbl])=>(
                         <th key={col} onClick={()=>tSort(col)}
                           style={{padding:"11px 14px",textAlign:"left",color:T.textDim,fontSize:9,letterSpacing:"2px",textTransform:"uppercase",fontWeight:600}}>
                           {lbl}<SA col={col}/>
@@ -626,7 +579,7 @@ function ClickLead() {
                         <td style={{padding:"10px 14px",color:T.turquoise,whiteSpace:"nowrap",fontWeight:500}}>{c.company}</td>
                         <td style={{padding:"10px 14px",color:T.textDim,whiteSpace:"nowrap",fontSize:11}}>{c.industry}</td>
                         <td style={{padding:"10px 14px",color:T.textDim,whiteSpace:"nowrap",fontSize:11}}>{c.location}</td>
-                        <td style={{padding:"10px 14px",minWidth:200}}>
+                        <td style={{padding:"10px 14px",minWidth:210}}>
                           {c.email
                             ? <div>
                                 <div style={{color:"#e2e8f0",fontSize:11,fontFamily:"monospace",marginBottom:4}}>{c.email}</div>
@@ -640,7 +593,7 @@ function ClickLead() {
                           {c.li
                             ? <a href={c.li} target="_blank" rel="noreferrer"
                                 style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:11,color:"#7bb3f0",textDecoration:"none",padding:"4px 10px",borderRadius:100,background:"rgba(123,179,240,0.08)",border:"1px solid rgba(123,179,240,0.2)",whiteSpace:"nowrap",transition:"all .15s"}}
-                                onMouseEnter={e=>{e.currentTarget.style.background="rgba(123,179,240,0.15)";e.currentTarget.style.borderColor="rgba(123,179,240,0.4)";}}
+                                onMouseEnter={e=>{e.currentTarget.style.background="rgba(123,179,240,0.18)";e.currentTarget.style.borderColor="rgba(123,179,240,0.4)";}}
                                 onMouseLeave={e=>{e.currentTarget.style.background="rgba(123,179,240,0.08)";e.currentTarget.style.borderColor="rgba(123,179,240,0.2)";}}>
                                 🔗 View Profile ↗
                               </a>
@@ -649,22 +602,12 @@ function ClickLead() {
                         </td>
                         <td style={{padding:"10px 14px",textAlign:"center"}}>
                           <div style={{fontFamily:"'DM Serif Display',serif",fontSize:17,background:"linear-gradient(to right,#00bcd4,#e83e8c)",WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent",lineHeight:1}}>{c.score}</div>
-                          <div style={{marginTop:4,width:36}}>
-                            <div className="sbf" style={{width:(((c.score-60)/39)*36)+"px"}}/>
-                          </div>
+                          <div style={{marginTop:4,width:36}}><div className="sbf" style={{width:(((c.score-60)/39)*36)+"px"}}/></div>
                         </td>
                         <td style={{padding:"10px 14px",minWidth:160}}>
                           <div style={{display:"flex",flexDirection:"column",gap:4}}>
-                            {c.funding&&(
-                              <span style={{fontSize:9,padding:"3px 8px",borderRadius:4,background:"rgba(251,191,36,0.08)",border:"1px solid rgba(251,191,36,0.2)",color:"#fbbf24",whiteSpace:"nowrap"}}>
-                                🏦 {c.funding}
-                              </span>
-                            )}
-                            {c.employees&&(
-                              <span style={{fontSize:9,padding:"3px 8px",borderRadius:4,background:"rgba(255,255,255,0.04)",border:"1px solid "+T.rule,color:T.textDim,whiteSpace:"nowrap"}}>
-                                👥 {c.employees}
-                              </span>
-                            )}
+                            {c.funding&&<span style={{fontSize:9,padding:"3px 8px",borderRadius:4,background:"rgba(251,191,36,0.08)",border:"1px solid rgba(251,191,36,0.2)",color:"#fbbf24",whiteSpace:"nowrap"}}>🏦 {c.funding}</span>}
+                            {c.employees&&<span style={{fontSize:9,padding:"3px 8px",borderRadius:4,background:"rgba(255,255,255,0.04)",border:"1px solid "+T.rule,color:T.textDim,whiteSpace:"nowrap"}}>👥 {c.employees}</span>}
                             {!c.funding&&!c.employees&&<span style={{color:T.rule,fontSize:10}}>—</span>}
                           </div>
                         </td>
@@ -674,34 +617,33 @@ function ClickLead() {
                 </table>
               </div>
 
-              {/* Pagination */}
               <div style={{padding:"12px 18px",display:"flex",alignItems:"center",justifyContent:"space-between",borderTop:"1px solid "+T.rule,flexWrap:"wrap",gap:10}}>
                 <span style={{fontSize:11,color:T.textDim}}>
-                  Page {dispPage} of {totalDisp} · {sorted.length.toLocaleString()} contacts displayed
-                  {canLoadMore&&<span style={{color:T.turquoise}}> · {(total-contacts.length).toLocaleString()} more available</span>}
+                  Page {dispPage} of {totalDisp} · {sorted.length.toLocaleString()} contacts
+                  {canMore&&<span style={{color:T.turquoise}}> · {(total-contacts.length).toLocaleString()} more available</span>}
                 </span>
                 <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center"}}>
-                  {canLoadMore&&(
-                    <button onClick={handleMore} disabled={loadingMore} className="bg" style={{borderColor:"rgba(0,188,212,0.3)",color:T.turquoise,marginRight:6}}>
-                      {loadingMore?<span className="pu">Loading…</span>:"+ Load More Results"}
+                  {canMore&&(
+                    <button onClick={handleMore} disabled={loadingMore} className="bg" style={{borderColor:"rgba(0,188,212,0.4)",color:T.turquoise,marginRight:4}}>
+                      {loadingMore?<span className="pu">Loading…</span>:"+ Load More"}
                     </button>
                   )}
-                  <button className="bg" disabled={dispPage===1}          onClick={()=>setDispPage(1)}          style={{padding:"5px 10px"}}>«</button>
-                  <button className="bg" disabled={dispPage===1}          onClick={()=>setDispPage(p=>p-1)}     style={{padding:"5px 10px"}}>‹</button>
+                  <button className="bg" disabled={dispPage===1}         onClick={()=>setDispPage(1)}         style={{padding:"5px 10px"}}>«</button>
+                  <button className="bg" disabled={dispPage===1}         onClick={()=>setDispPage(p=>p-1)}    style={{padding:"5px 10px"}}>‹</button>
                   {Array.from({length:Math.min(5,totalDisp)},(_,i)=>{
                     const p=dispPage<=3?i+1:dispPage+i-2;
                     if(p>totalDisp) return null;
                     return <button key={p} className="bg" onClick={()=>setDispPage(p)} style={{padding:"5px 10px",borderColor:p===dispPage?T.turquoise:"rgba(255,255,255,0.12)",color:p===dispPage?T.turquoise:T.textMid}}>{p}</button>;
                   })}
-                  <button className="bg" disabled={dispPage===totalDisp} onClick={()=>setDispPage(p=>p+1)}     style={{padding:"5px 10px"}}>›</button>
-                  <button className="bg" disabled={dispPage===totalDisp} onClick={()=>setDispPage(totalDisp)}  style={{padding:"5px 10px"}}>»</button>
+                  <button className="bg" disabled={dispPage===totalDisp} onClick={()=>setDispPage(p=>p+1)}   style={{padding:"5px 10px"}}>›</button>
+                  <button className="bg" disabled={dispPage===totalDisp} onClick={()=>setDispPage(totalDisp)} style={{padding:"5px 10px"}}>»</button>
                 </div>
               </div>
             </div>
           </div>
         )}
 
-        {/* ══ EMPTY STATE ══ */}
+        {/* ── EMPTY STATE ── */}
         {!searched&&!loading&&!error&&(
           <div style={{textAlign:"center",padding:"90px 20px"}}>
             <div style={{fontFamily:"'DM Serif Display',serif",fontSize:42,marginBottom:14,background:"linear-gradient(to right,#00bcd4,#e83e8c)",WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent"}}>
@@ -709,8 +651,8 @@ function ClickLead() {
             </div>
             <p style={{fontSize:14,fontWeight:300,color:T.textDim,maxWidth:480,margin:"0 auto",lineHeight:1.9}}>
               {apiKey
-                ? "Set your filters above and hit Find Real Leads — ClickLead will pull real named decision makers directly from Apollo's database of 275 million contacts."
-                : "Connect your Apollo API key above to get started. It's free and takes 30 seconds."
+                ? "Set your filters above and hit Find Real Leads — ClickLead pulls real named decision makers directly from Apollo's database of 275 million contacts."
+                : "Connect your Apollo API key using the ⚙ button in the top right to get started."
               }
             </p>
             <div style={{display:"flex",justifyContent:"center",alignItems:"center",gap:10,marginTop:28}}>
