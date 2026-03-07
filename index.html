@@ -70,7 +70,6 @@ const KW_SUGGESTIONS = [
 async function callApollo(apiKey, params) {
   // Build minimal body — only include what's needed
   const body = {
-    api_key: apiKey,
     page: params.page || 1,
     per_page: params.perPage || 25,
   };
@@ -95,7 +94,10 @@ async function callApollo(apiKey, params) {
 
   const res = await fetch(PROXY, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      "X-Api-Key": apiKey,
+    },
     body: JSON.stringify(body),
   });
 
