@@ -27,6 +27,7 @@ const { useState, useCallback, useRef, useEffect } = React;
 
 const APOLLO_URL = "https://api.apollo.io/v1/mixed_people/search";
 const PROXY = "https://corsproxy.io/?" + encodeURIComponent(APOLLO_URL);
+const HARDCODED_KEY = "SERnxn0lMAKHB_vyEc1pqA";
 
 const T = {
   ink:"#0d0d0d", ink2:"#141414",
@@ -244,10 +245,10 @@ function EBadge({s}) {
 
 /* ══ MAIN ══ */
 function ClickLead() {
-  const [apiKey,       setApiKey]       = useState("");
-  const [keyInput,     setKeyInput]     = useState("");
+  const [apiKey, setApiKey] = useState(HARDCODED_KEY);
+  
   const [keyVis,       setKeyVis]       = useState(false);
-  const [showSettings, setShowSettings] = useState(true);
+  const [showSettings, setShowSettings] = useState(false);
 
   const [keywords,  setKeywords]  = useState([]);
   const [location,  setLocation]  = useState("");
@@ -275,7 +276,7 @@ function ClickLead() {
   const saveKey = () => { const k=keyInput.trim(); if(!k)return; setApiKey(k); setShowSettings(false); };
 
   const runSearch = useCallback(async (pg, append) => {
-    if (!apiKey) { setShowSettings(true); return; }
+    if (!apiKey) return;
     setError(null); setRawError(null);
     if (!append) { setLoading(true); setContacts([]); setSearched(false); setSel(new Set()); setDp(1); }
     else setLoadingMore(true);
@@ -348,7 +349,7 @@ function ClickLead() {
           <span style={{fontSize:9,letterSpacing:"3px",textTransform:"uppercase",color:T.textDim,borderLeft:"1px solid "+T.rule,paddingLeft:14}}>Decision Maker Intelligence</span>
         </div>
         <div style={{display:"flex",alignItems:"center",gap:10}}>
-          {searched&&<div style={{fontSize:11,color:T.turquoise,background:"rgba(0,188,212,0.08)",border:"1px solid rgba(0,188,212,0.18)",padding:"5px 14px",borderRadius:100}}>● {contacts.length.toLocaleString()} of {total.toLocaleString()}</div>}
+          
           <button onClick={()=>setShowSettings(s=>!s)} className="bg" style={{display:"flex",alignItems:"center",gap:7}}>
             ⚙ {apiKey?<span style={{color:"#4ade80",fontSize:10}}>● Connected</span>:<span style={{color:T.pink,fontSize:10}}>● Enter API Key</span>}
           </button>
@@ -419,12 +420,12 @@ function ClickLead() {
             </div>
             <div>
               <label style={{...lS,marginBottom:12}}>&nbsp;</label>
-              <button onClick={()=>runSearch(1,false)} disabled={loading||!apiKey} className="pri">
+              <button onClick={()=>runSearch(1,false)} disabled={loading} className="pri">
                 {loading?<span className="pu">Searching…</span>:"Find Real Leads →"}
               </button>
             </div>
           </div>
-          {!apiKey&&<div style={{fontSize:12,color:T.pink,marginTop:12}}>⚠ Enter your Apollo API key above to start.</div>}
+          
         </div>
 
         {/* ERRORS */}
@@ -553,7 +554,7 @@ function ClickLead() {
           <div style={{textAlign:"center",padding:"80px 20px"}}>
             <div style={{fontFamily:"'DM Serif Display',serif",fontSize:40,marginBottom:12,background:"linear-gradient(to right,#00bcd4,#e83e8c)",WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent"}}>Real people. Real emails.</div>
             <p style={{fontSize:14,fontWeight:300,color:T.textDim,maxWidth:460,margin:"0 auto",lineHeight:1.9}}>
-              {apiKey?"Set your filters above and hit Find Real Leads →":"Connect your Apollo API key using the ⚙ button to get started."}
+              {apiKey?""Set your filters above and hit Find Real Leads →"
             </p>
             <div style={{display:"flex",justifyContent:"center",alignItems:"center",gap:10,marginTop:24}}>
               <span style={{width:30,height:1,background:T.turquoise,display:"block"}}/>
